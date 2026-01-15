@@ -993,7 +993,7 @@ static bool cmd_print_pxA(RzCore *core, int len, RzOutputMode mode) {
 	case RZ_OUTPUT_MODE_LONG:
 		datalen = cols * 8 * core->cons->rows;
 		data = malloc(datalen);
-		rz_io_read_at(core->io, core->offset, data, datalen);
+		rz_io_read_at_mapped(core->io, core->offset, data, datalen);
 		len = datalen;
 		break;
 	case RZ_OUTPUT_MODE_STANDARD:
@@ -1576,7 +1576,7 @@ static void func_walk_blocks(RzCore *core, RzAnalysisFunction *f, bool fromHere,
 				RZ_LOG_ERROR("core: cannot allocate %" PFMT64u " byte(s)\n", b->size);
 				return;
 			}
-			rz_io_read_at(core->io, b->addr, buf, b->size);
+			rz_io_read_at_mapped(core->io, b->addr, buf, b->size);
 			rz_core_print_disasm_json(core, b->addr, buf, b->size, 0, state->d.pj);
 			free(buf);
 		}
@@ -1712,18 +1712,15 @@ static bool cmd_pxr(RzCore *core, ut64 at, int len, RzCmdStateOutput *state, int
 	}
 
 	const ut8 *buf = core->block;
-
 	bool be = core->analysis->big_endian;
 	int end = RZ_MIN(core->blocksize, len);
 	int bitsize = wordsize * 8;
 	RzOutputMode mode = state->mode;
 	if (mode == RZ_OUTPUT_MODE_TABLE) {
 		RzTable *t = state->d.t;
-		RzTableColumnType *n = rz_table_type("number");
-		RzTableColumnType *s = rz_table_type("string");
-		rz_table_add_column(t, n, "addr", 0);
-		rz_table_add_column(t, n, "value", 0);
-		rz_table_add_column(t, s, "refs", 0);
+		rz_table_add_column(t, RZ_TABLE_COLUMN_TYPE_NUMBER, "addr");
+		rz_table_add_column(t, RZ_TABLE_COLUMN_TYPE_NUMBER, "value");
+		rz_table_add_column(t, RZ_TABLE_COLUMN_TYPE_STRING, "refs");
 		for (ut64 i = 0; i + wordsize < end; i += wordsize) {
 			ut64 addr = at + i;
 			ut64 val = rz_read_ble(buf + i, be, bitsize);
@@ -1975,7 +1972,7 @@ RZ_IPI RzCmdStatus rz_print_first_string_current_block_handler(RzCore *core, int
 		return RZ_CMD_STATUS_ERROR;
 	}
 
-	detected = rz_list_first(found);
+	detected = rz_list_first_val(found);
 	if (detected) {
 		rz_cons_memcat(detected->string, detected->size);
 		rz_cons_newline();
@@ -2511,7 +2508,7 @@ RZ_IPI RzCmdStatus rz_print_hexdump_function_handler(RzCore *core, int argc, con
 			core->print->flags = old_flags;
 			return RZ_CMD_STATUS_ERROR;
 		}
-		rz_io_read_at(core->io, b->addr, buf, b->size);
+		rz_io_read_at_mapped(core->io, b->addr, buf, b->size);
 		rz_core_print_hexdump(core, b->addr, buf, b->size, 0, 16, 0);
 		free(buf);
 	}
@@ -2612,7 +2609,7 @@ RZ_IPI RzCmdStatus rz_print_hexdump_hexless_words_handler(RzCore *core, int argc
 	if (!buf) {
 		return RZ_CMD_STATUS_ERROR;
 	}
-	rz_io_read_at(core->io, core->offset, buf, len * 4);
+	rz_io_read_at_mapped(core->io, core->offset, buf, len * 4);
 	core->print->flags |= RZ_PRINT_FLAGS_NONHEX;
 	rz_core_print_hexdump(core, core->offset, buf, len * 4, 8, 1, 1);
 	core->print->flags &= ~RZ_PRINT_FLAGS_NONHEX;
@@ -2767,7 +2764,7 @@ static void disassembly_as_table(RzTable *t, RzCore *core, ut64 addr, int n_inst
 		if (!comment) {
 			comment = "";
 		}
-		rz_io_read_at(core->io, offset, buffer, RZ_MIN(op->size, sizeof(buffer)));
+		rz_io_read_at_mapped(core->io, offset, buffer, RZ_MIN(op->size, sizeof(buffer)));
 		char *bytes = rz_hex_bin2strdup(buffer, op->size);
 		RzFlagItem *flag = rz_flag_get_i(core->flags, offset);
 		char *function_name = flag ? flag->name : "";
@@ -2876,7 +2873,7 @@ RZ_IPI RzCmdStatus rz_cmd_disassembly_all_possible_opcodes_handler(RzCore *core,
 	if (!buffer) {
 		goto fail;
 	}
-	if (!rz_io_read_at(core->io, core->offset, buffer, n_bytes)) {
+	if (!rz_io_read_at_mapped(core->io, core->offset, buffer, n_bytes)) {
 		goto fail;
 	}
 	vec = rz_core_disasm_all_possible_opcodes(core, buffer, core->offset, n_bytes);
@@ -2926,7 +2923,7 @@ RZ_IPI RzCmdStatus rz_cmd_disassembly_all_possible_opcodes_treeview_handler(RzCo
 	ut8 buffer[TREEVIEW_N_BYTES];
 	RzPVector *vec = NULL;
 	RzCmdStatus res = RZ_CMD_STATUS_OK;
-	if (!rz_io_read_at(core->io, core->offset, buffer, TREEVIEW_N_BYTES)) {
+	if (!rz_io_read_at_mapped(core->io, core->offset, buffer, TREEVIEW_N_BYTES)) {
 		goto fail;
 	}
 	vec = rz_core_disasm_all_possible_opcodes(core, buffer, core->offset, TREEVIEW_N_BYTES);
@@ -2974,7 +2971,7 @@ RZ_IPI RzCmdStatus rz_cmd_disassembly_basic_block_handler(RzCore *core, int argc
 		RZ_LOG_ERROR("Cannot allocate buffer\n");
 		return RZ_CMD_STATUS_ERROR;
 	}
-	rz_io_read_at(core->io, b->addr, block, b->size);
+	rz_io_read_at_mapped(core->io, b->addr, block, b->size);
 	RzCoreDisasmOptions disasm_options = {
 		.cbytes = 2,
 	};
@@ -3010,7 +3007,7 @@ RZ_IPI RzCmdStatus rz_cmd_disassembly_basic_block_as_text_json_handler(RzCore *c
 		RZ_LOG_ERROR("Cannot allocate buffer\n");
 		return RZ_CMD_STATUS_ERROR;
 	}
-	rz_io_read_at(core->io, b->addr, block, b->size);
+	rz_io_read_at_mapped(core->io, b->addr, block, b->size);
 	RzCoreDisasmOptions disasm_options = {
 		.cbytes = 2,
 	};
@@ -3084,7 +3081,7 @@ RZ_IPI RzCmdStatus rz_cmd_disassembly_function_handler(RzCore *core, int argc, c
 		return RZ_CMD_STATUS_ERROR;
 	}
 
-	(void)rz_io_read_at(core->io, start, bytes, size);
+	(void)rz_io_read_at_mapped(core->io, start, bytes, size);
 	RzCoreDisasmOptions disasm_options = {
 		.cbytes = 1,
 		.function = function,
@@ -3352,7 +3349,7 @@ RZ_IPI RzCmdStatus rz_cmd_disassemble_ropchain_handler(RzCore *core, int argc, c
 		return RZ_CMD_STATUS_ERROR;
 	}
 
-	(void)rz_io_read_at(core->io, core->offset, bytes, core->blocksize);
+	(void)rz_io_read_at_mapped(core->io, core->offset, bytes, core->blocksize);
 
 	rz_cmd_state_output_array_start(state);
 	for (ut32 i = 0; i < core->blocksize - asm_bytes; i += asm_bytes) {
@@ -3409,7 +3406,7 @@ static bool core_walk_function_blocks(RzCore *core, RzAnalysisFunction *f, RzCmd
 				RZ_LOG_ERROR("cannot allocate %" PFMT64u " byte(s)\n", b->size);
 				return false;
 			}
-			(void)rz_io_read_at(core->io, b->addr, buf, b->size);
+			(void)rz_io_read_at_mapped(core->io, b->addr, buf, b->size);
 			rz_core_print_disasm_json(core, b->addr, buf, b->size, 0, state->d.pj);
 			free(buf);
 		}
@@ -3614,7 +3611,7 @@ RZ_IPI RzCmdStatus rz_print_byte_bitstream_handler(RzCore *core, int argc, const
 		free(str_buf);
 		return RZ_CMD_STATUS_ERROR;
 	}
-	rz_io_read_at(core->io, start, bit_buf, len);
+	rz_io_read_at_mapped(core->io, start, bit_buf, len);
 	rz_str_bits(str_buf, (const ut8 *)bit_buf, len * 8, NULL);
 	rz_cons_println(str_buf);
 	free(bit_buf);
@@ -3628,13 +3625,44 @@ RZ_IPI RzCmdStatus rz_cmd_print_asn1_handler(RzCore *core, int argc, const char 
 		RZ_LOG_ERROR("core: Malformed object: did you supply enough data?\ntry to change the block size (see b? or @!<size>)\n");
 		return RZ_CMD_STATUS_ERROR;
 	}
-	char *res = rz_asn1_to_string(asn1, 0, mode == RZ_OUTPUT_MODE_STANDARD);
+	char *res = rz_asn1_to_string(asn1);
 	rz_asn1_object_free(asn1);
 	if (!res) {
 		return RZ_CMD_STATUS_ERROR;
 	}
 	rz_cons_printf("%s", res);
 	free(res);
+	return RZ_CMD_STATUS_OK;
+}
+
+RZ_IPI RzCmdStatus rz_cmd_print_asn1_structure_handler(RzCore *core, int argc, const char **argv, RzCmdStateOutput *state) {
+	RzASN1Object *asn1 = rz_asn1_object_parse(core->block, core->blocksize);
+	if (!asn1) {
+		RZ_LOG_ERROR("core: Malformed object: did you supply enough data?\ntry to change the block size (see b? or @!<size>)\n");
+		return RZ_CMD_STATUS_ERROR;
+	}
+	RzStructuredData *sd = rz_asn1_to_structure(asn1, state->mode == RZ_OUTPUT_MODE_QUIET);
+	rz_asn1_object_free(asn1);
+	if (!sd) {
+		RZ_LOG_ERROR("core: failed to create RzStructuredData from ASN1 data.\n");
+		return RZ_CMD_STATUS_ERROR;
+	}
+
+	switch (state->mode) {
+	case RZ_OUTPUT_MODE_JSON:
+		rz_structured_data_to_pj(sd, state->d.pj);
+		break;
+	default: {
+		char *res = rz_structured_data_to_yaml(sd);
+		if (res) {
+			rz_cons_println(res);
+			free(res);
+		}
+		break;
+	}
+	}
+	rz_structured_data_free(sd);
+
 	return RZ_CMD_STATUS_OK;
 }
 
@@ -3661,57 +3689,97 @@ RZ_IPI RzCmdStatus rz_cmd_print_protobuf_verbose_handler(RzCore *core, int argc,
 }
 
 RZ_IPI RzCmdStatus rz_cmd_print_pkcs7_handler(RzCore *core, int argc, const char **argv, RzCmdStateOutput *state) {
-	char *res = NULL;
 	RzCMS *cms = rz_pkcs7_cms_parse(core->block, core->blocksize);
 	if (!cms) {
 		RZ_LOG_ERROR("core: Malformed object: did you supply enough data?\ntry to change the block size (see b? or @!<size>)\n");
+		return RZ_CMD_STATUS_ERROR;
+	}
+
+	RzStructuredData *sd = rz_pkcs7_cms_to_structure(cms);
+	rz_pkcs7_cms_free(cms);
+	if (!sd) {
+		RZ_LOG_ERROR("core: failed to create RzStructuredData from CMS data.\n");
+		return RZ_CMD_STATUS_ERROR;
 	}
 
 	switch (state->mode) {
 	case RZ_OUTPUT_MODE_JSON:
-		rz_pkcs7_cms_json(cms, state->d.pj);
+		rz_structured_data_to_pj(sd, state->d.pj);
 		break;
-	default:
-		res = rz_pkcs7_cms_to_string(cms);
+	default: {
+		char *res = rz_structured_data_to_yaml(sd);
 		if (res) {
-			rz_cons_printf("%s", res);
+			rz_cons_println(res);
 			free(res);
 		}
 		break;
 	}
-	rz_pkcs7_cms_free(cms);
+	}
+	rz_structured_data_free(sd);
+
 	return RZ_CMD_STATUS_OK;
 }
 
 RZ_IPI RzCmdStatus rz_cmd_print_x509_handler(RzCore *core, int argc, const char **argv, RzCmdStateOutput *state) {
-	char *res = NULL;
-	RzStrBuf *sb = NULL;
 	RzX509Certificate *x509 = rz_x509_certificate_parse2(core->block, core->blocksize);
 	if (!x509) {
 		RZ_LOG_ERROR("core: Malformed object: did you supply enough data?\ntry to change the block size (see b? or @!<size>)\n");
 		return RZ_CMD_STATUS_ERROR;
 	}
 
+	RzStructuredData *sd = rz_x509_certificate_to_structure(x509);
+	rz_x509_certificate_free(x509);
+	if (!sd) {
+		RZ_LOG_ERROR("core: failed to create RzStructuredData from x509 data.\n");
+		return RZ_CMD_STATUS_ERROR;
+	}
+
 	switch (state->mode) {
 	case RZ_OUTPUT_MODE_JSON:
-		rz_x509_certificate_json(state->d.pj, x509);
+		rz_structured_data_to_pj(sd, state->d.pj);
 		break;
-	default:
-		sb = rz_strbuf_new(NULL);
-		if (!sb) {
-			RZ_LOG_ERROR("core: failed to allocate RzStrBuf\n");
-			rz_x509_certificate_free(x509);
-			return RZ_CMD_STATUS_ERROR;
-		}
-		rz_x509_certificate_dump(x509, NULL, sb);
-		res = rz_strbuf_drain(sb);
+	default: {
+		char *res = rz_structured_data_to_yaml(sd);
 		if (res) {
-			rz_cons_printf("%s", res);
+			rz_cons_println(res);
 			free(res);
 		}
 		break;
 	}
-	rz_x509_certificate_free(x509);
+	}
+	rz_structured_data_free(sd);
+
+	return RZ_CMD_STATUS_OK;
+}
+
+RZ_IPI RzCmdStatus rz_cmd_print_pkcs8_pkey_handler(RzCore *core, int argc, const char **argv, RzCmdStateOutput *state) {
+	RzPrivateKeyInfo *pki = rz_pkcs8_private_key_info_parse(core->block, core->blocksize);
+	if (!pki) {
+		RZ_LOG_ERROR("core: Malformed object: did you supply enough data?\ntry to change the block size (see b? or @!<size>)\n");
+		return RZ_CMD_STATUS_ERROR;
+	}
+
+	RzStructuredData *sd = rz_pkcs8_private_key_info_to_structure(pki);
+	rz_pkcs8_private_key_info_free(pki);
+	if (!sd) {
+		RZ_LOG_ERROR("core: failed to create RzStructuredData from PrivateKeyInfo data.\n");
+		return RZ_CMD_STATUS_ERROR;
+	}
+
+	switch (state->mode) {
+	case RZ_OUTPUT_MODE_JSON:
+		rz_structured_data_to_pj(sd, state->d.pj);
+		break;
+	default: {
+		char *res = rz_structured_data_to_yaml(sd);
+		if (res) {
+			rz_cons_println(res);
+			free(res);
+		}
+		break;
+	}
+	}
+	rz_structured_data_free(sd);
 	return RZ_CMD_STATUS_OK;
 }
 
@@ -4166,7 +4234,7 @@ RZ_IPI RzCmdStatus rz_print_key_mosaic_handler(RzCore *core, int argc, const cha
 		for (j = 0; j < cols; j++) {
 			rz_cons_canvas_gotoxy(c, j * 20, i * 11);
 			core->offset += len;
-			rz_io_read_at(core->io, core->offset, core->block, len);
+			rz_io_read_at_mapped(core->io, core->offset, core->block, len);
 			s = rz_hash_cfg_randomart(core->block, len, core->offset);
 			rz_cons_canvas_write(c, s);
 			free(s);
@@ -4174,7 +4242,7 @@ RZ_IPI RzCmdStatus rz_print_key_mosaic_handler(RzCore *core, int argc, const cha
 	}
 	rz_cons_canvas_print(c);
 	rz_cons_canvas_free(c);
-	rz_io_read_at(core->io, offset0, core->block, len);
+	rz_io_read_at_mapped(core->io, offset0, core->block, len);
 	core->offset = offset0;
 	rz_cons_printf("\n");
 	return RZ_CMD_STATUS_OK;
@@ -4501,7 +4569,7 @@ static void analysis_stats_entropy_info(RzCore *core, RzCoreAnalysisStats *as, u
 	if (!blockptr) {
 		return;
 	}
-	if (rz_io_read_at(core->io, at, blockptr, (ate - at))) {
+	if (rz_io_read_at_mapped(core->io, at, blockptr, (ate - at))) {
 		ut8 entropy = (ut8)(rz_hash_entropy_fraction(blockptr, (ate - at)) * 255);
 		entropy = 9 * entropy / 200; // normalize entropy from 0 to 9
 		if (use_color) {
@@ -4653,7 +4721,7 @@ static void print_stack(RzCore *core) {
 	RzCmdStateOutput so;
 	ut64 sp_addr = rz_core_reg_getv_by_role_or_name(core, "SP");
 	if (rz_config_get_b(core->config, "dbg.slow")) {
-		rz_cmd_state_output_init(&so, RZ_OUTPUT_MODE_STANDARD);
+		rz_cmd_state_output_init(&so, RZ_OUTPUT_MODE_STANDARD, core);
 		int wordsize = rz_analysis_get_address_bits(core->analysis) / 8;
 		cmd_pxr(core, sp_addr, 128, &so, wordsize, NULL);
 		rz_cmd_state_output_print(&so);
@@ -4670,7 +4738,7 @@ static void print_stack(RzCore *core) {
 	} else if (core->rasm->bits == 32) {
 		rz_core_print_dump(core, RZ_OUTPUT_MODE_STANDARD, sp_addr, 4, 128, RZ_CORE_PRINT_FORMAT_TYPE_HEXADECIMAL);
 	}
-	rz_cmd_state_output_init(&so, RZ_OUTPUT_MODE_STANDARD);
+	rz_cmd_state_output_init(&so, RZ_OUTPUT_MODE_STANDARD, core);
 	core_disassembly(core, core->blocksize, 0, &so, false);
 	rz_cmd_state_output_fini(&so);
 }
@@ -4707,7 +4775,7 @@ RZ_IPI RzCmdStatus rz_print_columns_debug_handler(RzCore *core, int argc, const 
 	rz_cons_push();
 	rz_debug_regs_args_handler(core, 0, NULL, RZ_OUTPUT_MODE_STANDARD);
 	rz_cons_print("\nbacktrace:\n");
-	rz_cmd_state_output_init(&so, RZ_OUTPUT_MODE_STANDARD);
+	rz_cmd_state_output_init(&so, RZ_OUTPUT_MODE_STANDARD, core);
 	rz_cmd_debug_display_bt_handler(core, 0, NULL, &so);
 	rz_cmd_state_output_print(&so);
 	rz_cmd_state_output_fini(&so);
@@ -4896,7 +4964,7 @@ static CoreBlockRange *calculate_blocks_range(RzCore *core, ut64 from, ut64 to, 
 			free(brange);
 			return NULL;
 		}
-		RzIOMap *map = rz_list_first(boundaries);
+		RzIOMap *map = rz_list_first_val(boundaries);
 		if (map) {
 			brange->from = map->itv.addr;
 			RzIOMap *m;
@@ -5252,7 +5320,7 @@ static RzCmdStatus print_histogram_bytes(RzCore *core, int argc, const char **ar
 		return RZ_CMD_STATUS_ERROR;
 	}
 	ut8 *data = calloc(1, brange->nblocks);
-	rz_io_read_at(core->io, core->offset, data, brange->nblocks);
+	rz_io_read_at_mapped(core->io, core->offset, data, brange->nblocks);
 	if (isinteractive) {
 		if (!print_visual_bytes(core, data, brange)) {
 			RZ_LOG_ERROR("Cannot generate interactive histogram\n");
@@ -5300,7 +5368,7 @@ static RzCmdStatus print_histogram_entropy(RzCore *core, int argc, const char **
 	}
 	for (size_t i = 0; i < brange->nblocks; i++) {
 		ut64 off = brange->from + (brange->blocksize * (i + brange->skipblocks));
-		rz_io_read_at(core->io, off, tmp, brange->blocksize);
+		rz_io_read_at_mapped(core->io, off, tmp, brange->blocksize);
 		data[i] = (ut8)(255 * rz_hash_entropy_fraction(tmp, brange->blocksize));
 	}
 	free(tmp);
@@ -5328,15 +5396,13 @@ static bool print_rising_and_falling_entropy_table(RzCore *core, RzCmdStateOutpu
 	bool resetFlag = 1;
 	st8 lastEdge = 0;
 	RzTable *t = state->d.t;
-	RzTableColumnType *n = rz_table_type("number");
-	RzTableColumnType *s = rz_table_type("string");
-	rz_table_add_column(t, n, "addr", 0);
-	rz_table_add_column(t, n, "index", 0);
-	rz_table_add_column(t, s, "edge_type", 0);
-	rz_table_add_column(t, n, "entropy_value", 0);
+	rz_table_add_column(t, RZ_TABLE_COLUMN_TYPE_NUMBER, "addr");
+	rz_table_add_column(t, RZ_TABLE_COLUMN_TYPE_NUMBER, "index");
+	rz_table_add_column(t, RZ_TABLE_COLUMN_TYPE_STRING, "edge_type");
+	rz_table_add_column(t, RZ_TABLE_COLUMN_TYPE_NUMBER, "entropy_value");
 	for (int i = 0; i < brange->nblocks; i++) {
 		ut64 off = brange->from + (brange->blocksize * (i));
-		if (!rz_io_read_at(core->io, off, tmp, brange->blocksize))
+		if (!rz_io_read_at_mapped(core->io, off, tmp, brange->blocksize))
 			return false;
 		double data = rz_hash_entropy_fraction(tmp, brange->blocksize);
 		// reseting flag if goes above falling threshold and below rising threshold
@@ -5370,7 +5436,7 @@ static bool print_rising_and_falling_entropy_JSON(RzCore *core, RzCmdStateOutput
 	pj_a(pj);
 	for (int i = 0; i < brange->nblocks; i++) {
 		ut64 off = brange->from + (brange->blocksize * (i));
-		if (!rz_io_read_at(core->io, off, tmp, brange->blocksize))
+		if (!rz_io_read_at_mapped(core->io, off, tmp, brange->blocksize))
 			return false;
 		double data = rz_hash_entropy_fraction(tmp, brange->blocksize);
 		// reseting flag if goes above falling threshold and below rising threshold
@@ -5418,7 +5484,7 @@ static bool print_rising_and_falling_entropy_quiet(RzCore *core, CoreBlockRange 
 	st8 lastEdge = 0;
 	for (int i = 0; i < brange->nblocks; i++) {
 		ut64 off = brange->from + (brange->blocksize * (i));
-		if (!rz_io_read_at(core->io, off, tmp, brange->blocksize)) {
+		if (!rz_io_read_at_mapped(core->io, off, tmp, brange->blocksize)) {
 			rz_strbuf_free(buf);
 			return false;
 		}
@@ -5460,7 +5526,7 @@ static bool print_rising_and_falling_entropy_standard(RzCore *core, CoreBlockRan
 	st8 lastEdge = 0;
 	for (int i = 0; i < brange->nblocks; i++) {
 		ut64 off = brange->from + (brange->blocksize * (i));
-		if (!rz_io_read_at(core->io, off, tmp, brange->blocksize)) {
+		if (!rz_io_read_at_mapped(core->io, off, tmp, brange->blocksize)) {
 			rz_strbuf_free(buf);
 			return false;
 		}
@@ -5502,7 +5568,7 @@ static bool print_rising_and_falling_entropy_long(RzCore *core, CoreBlockRange *
 	st8 lastEdge = 0;
 	for (int i = 0; i < brange->nblocks; i++) {
 		ut64 off = brange->from + (brange->blocksize * (i));
-		if (!rz_io_read_at(core->io, off, tmp, brange->blocksize)) {
+		if (!rz_io_read_at_mapped(core->io, off, tmp, brange->blocksize)) {
 			rz_strbuf_free(buf);
 			return false;
 		}
@@ -5698,7 +5764,7 @@ static RzCmdStatus print_histogram_0x00(RzCore *core, int argc, const char **arg
 	for (size_t i = 0; i < brange->nblocks; i++) {
 		int k = 0;
 		ut64 off = brange->from + (brange->blocksize * (i + brange->skipblocks));
-		rz_io_read_at(core->io, off, tmp, brange->blocksize);
+		rz_io_read_at_mapped(core->io, off, tmp, brange->blocksize);
 		for (size_t j = k = 0; j < brange->blocksize; j++) {
 			if (!tmp[j]) {
 				k++;
@@ -5755,7 +5821,7 @@ static RzCmdStatus print_histogram_0xff(RzCore *core, int argc, const char **arg
 	for (size_t i = 0; i < brange->nblocks; i++) {
 		int k = 0;
 		ut64 off = brange->from + (brange->blocksize * (i + brange->skipblocks));
-		rz_io_read_at(core->io, off, tmp, brange->blocksize);
+		rz_io_read_at_mapped(core->io, off, tmp, brange->blocksize);
 		for (size_t j = k = 0; j < brange->blocksize; j++) {
 			if (tmp[j] == 0xff) {
 				k++;
@@ -5812,7 +5878,7 @@ static RzCmdStatus print_histogram_printable(RzCore *core, int argc, const char 
 	for (size_t i = 0; i < brange->nblocks; i++) {
 		int k = 0;
 		ut64 off = brange->from + (brange->blocksize * (i + brange->skipblocks));
-		rz_io_read_at(core->io, off, tmp, brange->blocksize);
+		rz_io_read_at_mapped(core->io, off, tmp, brange->blocksize);
 		for (size_t j = k = 0; j < brange->blocksize; j++) {
 			if (IS_PRINTABLE(tmp[j])) {
 				k++;
@@ -5870,7 +5936,7 @@ static RzCmdStatus print_histogram_z(RzCore *core, int argc, const char **argv, 
 	for (size_t i = 0; i < brange->nblocks; i++) {
 		int k = 0;
 		ut64 off = brange->from + (brange->blocksize * (i + brange->skipblocks));
-		rz_io_read_at(core->io, off, tmp, brange->blocksize);
+		rz_io_read_at_mapped(core->io, off, tmp, brange->blocksize);
 		for (size_t j = k = 0; j < brange->blocksize; j++) {
 			if (IS_PRINTABLE(tmp[j])) {
 				if ((j + 1) < brange->blocksize && tmp[j + 1] == 0) {
@@ -6092,7 +6158,7 @@ static void printraw(RzCore *core, int len, bool stop_at_null) {
 	if (!data) {
 		return;
 	}
-	if (rz_io_read_at(core->io, core->offset, data, len)) {
+	if (rz_io_read_at_mapped(core->io, core->offset, data, len)) {
 		if (stop_at_null) {
 			len = rz_str_nlen((const char *)data, len);
 		}
@@ -6355,7 +6421,7 @@ static RzCmdStatus print_8bit_hexpair(RzCore *core, ut64 addr, size_t len) {
 		RZ_LOG_ERROR("core: cannot allocate %zu byte(s)\n", len);
 		return RZ_CMD_STATUS_ERROR;
 	}
-	rz_io_read_at(core->io, addr, buf, len);
+	rz_io_read_at_mapped(core->io, addr, buf, len);
 	rz_print_bytes(core->print, buf, len, "%02x");
 	return RZ_CMD_STATUS_OK;
 }

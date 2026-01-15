@@ -83,7 +83,7 @@ static bool find_string_at(RzCore *core, RzBinObject *bobj, ut64 pointer, char *
 
 	rz_io_pread_at(core->io, pointer, buffer, sizeof(buffer));
 	if (rz_scan_strings_raw(buffer, strings, &scan_opt, 0, sizeof(buffer), strenc) < 1 ||
-		!(detected = rz_list_first(strings)) ||
+		!(detected = rz_list_first_val(strings)) ||
 		// ignore any address that is not address 0
 		// because we only want strings starting at 0
 		detected->addr) {
@@ -126,7 +126,7 @@ RZ_IPI bool rz_core_get_string_at(RzCore *core, ut64 address, char **string, siz
 		address = paddress;
 	}
 
-	if (rz_io_read_at(core->io, address, tmp64, sizeof(tmp64))) {
+	if (rz_io_read_at_mapped(core->io, address, tmp64, sizeof(tmp64))) {
 		// checks if is a pointer to a string structure
 		pointer = rz_read_ble(tmp64, core->analysis->big_endian, core->analysis->bits);
 	}
@@ -304,7 +304,7 @@ RZ_API ut64 rz_core_analysis_address(RzCore *core, ut64 addr) {
 }
 
 RZ_IPI void rz_core_analysis_bbs_asciiart(RzCore *core, RzAnalysisFunction *fcn) {
-	RzList *flist = rz_list_newf((RzListFree)rz_listinfo_free);
+	RzList *flist = rz_list_newf((RzListFree)rz_debug_listinfo_free);
 	if (!flist) {
 		return;
 	}
@@ -314,14 +314,14 @@ RZ_IPI void rz_core_analysis_bbs_asciiart(RzCore *core, RzAnalysisFunction *fcn)
 	rz_pvector_foreach (fcn->bbs, iter) {
 		b = (RzAnalysisBlock *)*iter;
 		RzInterval inter = (RzInterval){ b->addr, b->size };
-		RzListInfo *info = rz_listinfo_new(NULL, inter, inter, -1, NULL);
+		RzDbgListInfo *info = rz_debug_listinfo_new(NULL, inter, inter, -1, NULL);
 		if (!info) {
 			break;
 		}
 		rz_list_append(flist, info);
 	}
 	RzTable *table = rz_core_table(core);
-	rz_table_visual_list(table, flist, core->offset, core->blocksize,
+	rz_core_debug_listinfo_to_table(table, flist, core->offset, core->blocksize,
 		rz_cons_get_size(NULL), rz_config_get_i(core->config, "scr.color"));
 	rz_cons_printf("\n%s\n", rz_table_tostring(table));
 	rz_table_free(table);
@@ -497,7 +497,7 @@ RZ_IPI void rz_core_analysis_bbs_info_print(RzCore *core, RzAnalysisFunction *fc
 RZ_IPI void rz_core_analysis_bb_info_print(RzCore *core, RzAnalysisBlock *bb, ut64 addr, RzCmdStateOutput *state) {
 	rz_return_if_fail(core && bb && state);
 	rz_cmd_state_output_set_columnsf(state, "xdxx", "addr", "size", "jump", "fail");
-	RzAnalysisFunction *fcn = rz_list_first(bb->fcns);
+	RzAnalysisFunction *fcn = rz_list_first_val(bb->fcns);
 	bb_info_print(core, fcn, bb, addr, state->mode, state->d.pj, state->d.t);
 }
 
@@ -663,7 +663,7 @@ static bool rz_analysis_try_get_fcn(RzCore *core, RzAnalysisXRef *xref, int fcnd
 
 	if (map->perm & RZ_PERM_X) {
 		ut8 buf[64];
-		rz_io_read_at(core->io, xref->to, buf, sizeof(buf));
+		rz_io_read_at_mapped(core->io, xref->to, buf, sizeof(buf));
 		bool looksLikeAFunction = rz_analysis_check_fcn(core->analysis, buf, sizeof(buf), xref->to, map->itv.addr,
 			map->itv.addr + map->itv.size);
 		if (looksLikeAFunction) {
@@ -688,7 +688,7 @@ static bool rz_analysis_try_get_fcn(RzCore *core, RzAnalysisXRef *xref, int fcnd
 		ut64 offe = offs + 1024;
 		for (offs = 0; offs < offe; offs += sz, xref1.from += sz) {
 			ut8 bo[8];
-			rz_io_read_at(core->io, xref->to + offs, bo, RZ_MIN(sizeof(bo), sz));
+			rz_io_read_at_mapped(core->io, xref->to + offs, bo, RZ_MIN(sizeof(bo), sz));
 			bool be = core->analysis->big_endian;
 			switch (sz) {
 			case 1:
@@ -767,7 +767,7 @@ static void autoname_imp_trampoline(RzCore *core, RzAnalysisFunction *fcn) {
 	if (rz_pvector_len(fcn->bbs) == 1 && ((RzAnalysisBlock *)rz_pvector_head(fcn->bbs))->ninstr == 1) {
 		RzList *xrefs = rz_analysis_function_get_xrefs_from(fcn);
 		if (xrefs && rz_list_length(xrefs) == 1) {
-			RzAnalysisXRef *xref = rz_list_first(xrefs);
+			RzAnalysisXRef *xref = rz_list_first_val(xrefs);
 			if (xref->type != RZ_ANALYSIS_XREF_TYPE_CALL) { /* Some fcns don't return */
 				RzFlagItem *flg = rz_flag_get_i(core->flags, xref->to);
 				if (flg && rz_str_startswith(flg->name, "sym.imp.")) {
@@ -1018,7 +1018,7 @@ RZ_API RzAnalysisOp *rz_core_analysis_op(RzCore *core, ut64 addr, int mask) {
 			goto err_op;
 		}
 	} else {
-		if (!rz_io_read_at(core->io, addr, buf, sizeof(buf))) {
+		if (!rz_io_read_at_mapped(core->io, addr, buf, sizeof(buf))) {
 			goto err_op;
 		}
 		ptr = buf;
@@ -1768,7 +1768,6 @@ RZ_API int rz_core_analysis_search(RzCore *core, ut64 from, ut64 to, ut64 ref, i
 	int i, count = 0;
 	RzAnalysisOp op = { 0 };
 	ut64 at;
-	char bckwrds, do_bckwrd_srch;
 	int arch = -1;
 	if (core->rasm->bits == 64) {
 		// speedup search
@@ -1776,10 +1775,6 @@ RZ_API int rz_core_analysis_search(RzCore *core, ut64 from, ut64 to, ut64 ref, i
 			arch = RZ_ARCH_ARM64;
 		}
 	}
-	// TODO: get current section range here
-	// ???
-	// XXX must read bytes correctly
-	do_bckwrd_srch = bckwrds = core->search->bckwrds;
 	if (core->file) {
 		rz_io_use_fd(core->io, core->file->fd);
 	}
@@ -1790,30 +1785,18 @@ RZ_API int rz_core_analysis_search(RzCore *core, ut64 from, ut64 to, ut64 ref, i
 	}
 	rz_cons_break_push(NULL, NULL);
 	if (core->blocksize > OPSZ) {
-		if (bckwrds) {
-			if (from + core->blocksize > to) {
-				at = from;
-				do_bckwrd_srch = false;
-			} else {
-				at = to - core->blocksize;
-			}
-		} else {
-			at = from;
-		}
-		while ((!bckwrds && at < to) || bckwrds) {
+		at = from;
+		while (at < to) {
 			eprintf("\r[0x%08" PFMT64x "-0x%08" PFMT64x "] ", at, to);
 			if (rz_cons_is_breaked()) {
 				break;
 			}
 			// TODO: this can be probably enhanced
-			if (!rz_io_read_at(core->io, at, buf, core->blocksize)) {
+			if (!rz_io_read_at_mapped(core->io, at, buf, core->blocksize)) {
 				RZ_LOG_ERROR("core: failed to read at 0x%08" PFMT64x "\n", at);
 				break;
 			}
-			for (i = bckwrds ? (core->blocksize - OPSZ - 1) : 0;
-				(!bckwrds && i < core->blocksize - OPSZ) ||
-				(bckwrds && i > 0);
-				bckwrds ? i-- : i++) {
+			for (i = 0; (i < core->blocksize - OPSZ); i++) {
 				// TODO: honor analysis.align
 				if (rz_cons_is_breaked()) {
 					break;
@@ -1896,19 +1879,7 @@ RZ_API int rz_core_analysis_search(RzCore *core, ut64 from, ut64 to, ut64 ref, i
 				i += op.size - 1;
 				rz_analysis_op_fini(&op);
 			}
-			if (bckwrds) {
-				if (!do_bckwrd_srch) {
-					break;
-				}
-				if (at > from + core->blocksize - OPSZ) {
-					at -= core->blocksize;
-				} else {
-					do_bckwrd_srch = false;
-					at = from;
-				}
-			} else {
-				at += core->blocksize - OPSZ;
-			}
+			at += core->blocksize - OPSZ;
 		}
 	} else {
 		RZ_LOG_ERROR("core: block size too small\n");
@@ -2127,7 +2098,7 @@ RZ_API int rz_core_analysis_search_xrefs(RZ_NONNULL RzCore *core, ut64 from, ut6
 		if (!rz_io_is_valid_offset(core->io, at, RZ_PERM_X)) {
 			break;
 		}
-		(void)rz_io_read_at(core->io, at, buf, bsz);
+		(void)rz_io_read_at_mapped(core->io, at, buf, bsz);
 		memset(block, -1, bsz);
 		if (!memcmp(buf, block, bsz)) {
 			at += ret;
@@ -2263,6 +2234,22 @@ static bool isSkippable(RzBinSymbol *s) {
 	return false;
 }
 
+static bool arch_is(RzCore *core, const char *x) {
+	RzAsm *as = core ? core->rasm : NULL;
+	if (as && as->cur && as->bits <= 32 && as->cur->name) {
+		return strstr(as->cur->name, x);
+	}
+	return false;
+}
+
+static bool archIsThumbable(RzCore *core) {
+	return arch_is(core, "arm");
+}
+
+static int compare_symbol_names(const char *s1, RzBinSymbol *sym, RZ_UNUSED void *user) {
+	return strcmp(s1, sym->name);
+}
+
 RZ_API int rz_core_analysis_all(RzCore *core) {
 	RzPVector *vector;
 	RzListIter *iter;
@@ -2293,6 +2280,12 @@ RZ_API int rz_core_analysis_all(RzCore *core) {
 	/* Symbols (Imports are already analyzed by rz_bin on init) */
 	void **it;
 	if (o && (vector = o->symbols) != NULL) {
+		// Find address of `__gnu_thumb1_case_uqi` GCC helper function on ARM (Thumb-1 mode)
+		if (archIsThumbable(core) && (it = rz_pvector_find(vector, "__gnu_thumb1_case_uqi", (RzPVectorComparator)compare_symbol_names, NULL))) {
+			RzBinSymbol *symbol = *it;
+			core->analysis->gnu_thumb1_case_uqi_addr = isValidSymbol(symbol) ? rz_bin_object_get_vaddr(o, symbol->paddr, symbol->vaddr) : 0;
+		}
+
 		rz_pvector_foreach (vector, it) {
 			symbol = *it;
 			if (rz_cons_is_breaked()) {
@@ -4627,18 +4620,6 @@ RZ_IPI void rz_core_analysis_function_until(RzCore *core, ut64 addr_end) {
 	rz_config_set(core->config, "analysis.limits", c ? c : "");
 }
 
-static bool arch_is(RzCore *core, const char *x) {
-	RzAsm *as = core ? core->rasm : NULL;
-	if (as && as->cur && as->bits <= 32 && as->cur->name) {
-		return strstr(as->cur->name, x);
-	}
-	return false;
-}
-
-static bool archIsThumbable(RzCore *core) {
-	return arch_is(core, "arm");
-}
-
 static void cb_in_range_aav(RzCore *core, ut64 from, ut64 to, int vsize, void *user) {
 	int arch_align = rz_analysis_archinfo(core->analysis, RZ_ANALYSIS_ARCHINFO_TEXT_ALIGN);
 	bool vinfun = rz_config_get_b(core->config, "analysis.vinfun");
@@ -5306,7 +5287,7 @@ RZ_API RZ_OWN RzIterator *rz_core_analysis_op_chunk_iter(
 	if (!ctx) {
 		goto cleanup;
 	}
-	if (!rz_io_read_at(core->io, offset, buf, len)) {
+	if (!rz_io_read_at_mapped(core->io, offset, buf, len)) {
 		goto cleanup;
 	}
 
@@ -5358,7 +5339,7 @@ RZ_API bool rz_core_analysis_hint_set_offset(RZ_NONNULL RzCore *core, RZ_NONNULL
 	rz_return_val_if_fail(core && struct_member, false);
 	RzAnalysisOp op = { 0 };
 	ut8 code[128] = { 0 };
-	if (!rz_io_read_at(core->io, core->offset, code, sizeof(code))) {
+	if (!rz_io_read_at_mapped(core->io, core->offset, code, sizeof(code))) {
 		return false;
 	}
 	bool res = false;
@@ -5585,7 +5566,7 @@ RZ_API bool rz_core_analysis_rename(RZ_NONNULL RzCore *core, RZ_NONNULL const ch
 	rz_return_val_if_fail(core && core->analysis && RZ_STR_ISNOTEMPTY(name), false);
 
 	ut8 buf[128];
-	if (!rz_io_read_at(core->io, addr, buf, sizeof(buf))) {
+	if (!rz_io_read_at_mapped(core->io, addr, buf, sizeof(buf))) {
 		return false;
 	}
 
@@ -5623,7 +5604,7 @@ RZ_API RZ_OWN RzCoreAnalysisName *rz_core_analysis_name(RZ_NONNULL RzCore *core,
 	rz_return_val_if_fail(core && core->analysis, NULL);
 
 	ut8 buf[128];
-	if (!rz_io_read_at(core->io, addr, buf, sizeof(buf))) {
+	if (!rz_io_read_at_mapped(core->io, addr, buf, sizeof(buf))) {
 		return NULL;
 	}
 
@@ -5701,7 +5682,7 @@ static void _analysis_calls(RzCore *core, ut64 addr, ut64 addr_end, bool imports
 			bufi = 0;
 		}
 		if (!bufi) {
-			(void)rz_io_read_at(core->io, addr, buf, bsz);
+			(void)rz_io_read_at_mapped(core->io, addr, buf, bsz);
 		}
 		if (!memcmp(buf, block0, bsz) || !memcmp(buf, block1, bsz)) {
 			// eprintf ("Error: skipping uninitialized block \n");
@@ -5735,7 +5716,7 @@ static void _analysis_calls(RzCore *core, ut64 addr, ut64 addr_end, bool imports
 				}
 				if (isValidCall) {
 					ut8 buf[4];
-					rz_io_read_at(core->io, op.jump, buf, 4);
+					rz_io_read_at_mapped(core->io, op.jump, buf, 4);
 					isValidCall = memcmp(buf, "\x00\x00\x00\x00", 4);
 				}
 				if (isValidCall) {
@@ -5843,7 +5824,7 @@ RZ_IPI ut64 rz_core_prevop_addr_heuristic(RzCore *core, ut64 addr) {
 	int midflags = rz_config_get_i(core->config, "asm.flags.middle");
 	target = addr;
 	base = target > OPDELTA ? target - OPDELTA : 0;
-	rz_io_read_at(core->io, base, buf, sizeof(buf));
+	rz_io_read_at_mapped(core->io, base, buf, sizeof(buf));
 	for (i = 0; i < sizeof(buf); i++) {
 		rz_analysis_op_init(&op);
 		ret = rz_analysis_op(core->analysis, &op, base + i,

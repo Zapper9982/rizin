@@ -28,6 +28,7 @@ RZ_IPI RZ_OWN RzCoreVisual *rz_core_visual_new() {
 	visual->view->output_mode = -1;
 	visual->view->output_addr = -1;
 	visual->view->selectPanel = false;
+	visual->view->curtheme = NULL;
 	memset(&visual->util, 0, sizeof(RzVisualUtil));
 	visual->util.oseek = UT64_MAX;
 	return visual;
@@ -41,6 +42,7 @@ RZ_IPI void rz_core_visual_free(RZ_NULLABLE RzCoreVisual *visual) {
 	rz_config_hold_free(visual->util.hold);
 	rz_list_free(visual->tabs);
 	free(visual->view->inputing);
+	free(visual->view->curtheme);
 	free(visual->view);
 	free(visual);
 }
@@ -1202,7 +1204,7 @@ repeat:
 		bool asm_bytes = rz_config_get_b(core->config, "asm.bytes");
 		rz_config_set_b(core->config, "asm.bytes", false);
 		RzCmdStateOutput state;
-		if (!rz_cmd_state_output_init(&state, RZ_OUTPUT_MODE_STANDARD)) {
+		if (!rz_cmd_state_output_init(&state, RZ_OUTPUT_MODE_STANDARD, core)) {
 			return RZ_CMD_STATUS_INVALID;
 		}
 		rz_core_flag_describe(core, core->offset, false, &state);

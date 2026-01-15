@@ -351,7 +351,7 @@ static bool meta_string_8bit_add(RzCore *core, ut64 addr, size_t limit, ut8 **na
 	if (!*name) {
 		return false;
 	}
-	if (!rz_io_read_at(core->io, addr, *name, limit)) {
+	if (!rz_io_read_at_mapped(core->io, addr, *name, limit)) {
 		RZ_FREE(*name);
 		return false;
 	}
@@ -392,7 +392,7 @@ static bool meta_string_guess_add(RzCore *core, ut64 addr, size_t limit, char **
 		free(name);
 		return false;
 	}
-	*ds = rz_list_first(str_list);
+	*ds = rz_list_first_val(str_list);
 	rz_list_free(str_list);
 	rz_str_ncpy(name, (*ds)->string, limit);
 	name[limit] = '\0';

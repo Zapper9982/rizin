@@ -86,7 +86,7 @@ static RzList /*<RzAnalysisFunction *>*/ *list_new_fcns(RzCore *core) {
 	rz_list_foreach (list, it, fcn) {
 		char *res = strstr(fcn->name, "sym.imp.operator_new");
 		if (res != NULL) {
-			rz_list_push(ret_list, it->elem);
+			rz_list_push(ret_list, it->val);
 		}
 	}
 	return ret_list;
@@ -592,7 +592,7 @@ RZ_API RzCppVariableBook *rz_analysis_mark_classes(RzAnalysis *analysis) {
 	bool refresh_vm = false;
 
 	ut8 *bytes = malloc(end - state->addr);
-	if (!rz_io_read_at(core->io, state->addr, bytes, end - state->addr)) {
+	if (!rz_io_read_at_mapped(core->io, state->addr, bytes, end - state->addr)) {
 		RZ_LOG_ERROR("Cannot read at offset 0x%08" PFMT64x "\n", core->offset);
 	}
 	ut64 offset = 0;
@@ -786,7 +786,7 @@ static void devirtualize_variable_vtable(RzAnalysis *analysis, RzCppVariableBook
 	RzAnalysisOp *op = rz_analysis_op_new();
 
 	ut8 *bytes = malloc(end - start);
-	if (!rz_io_read_at(core->io, start, bytes, end - start)) {
+	if (!rz_io_read_at_mapped(core->io, start, bytes, end - start)) {
 		RZ_LOG_ERROR("Cannot read at offset 0x%08" PFMT64x "\n", start);
 	}
 	ut64 offset = 0;
